@@ -1,0 +1,35 @@
+# Secrets
+.env
+.env.local
+*.pem
+*.key
+secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# Testing
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.pytest_cache/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Data local
+data/raw/
+data/processed/
+*.sqlite
+*.db
