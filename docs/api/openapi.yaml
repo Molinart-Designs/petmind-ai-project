@@ -1,0 +1,351 @@
+openapi: "3.1.0"
+info:
+  title: "PetMind AI API"
+  description: "API REST para solución AI/LLM con RAG orientada a recomendaciones personalizadas de cuidado de mascotas."
+  version: "1.0.0"
+  contact:
+    name: "Emilio Molina"
+    email: "emilio_molina_19@hotmail.com"
+
+servers:
+  - url: "http://localhost:8000"
+    description: "Desarrollo local"
+  - url: "https://petmind-api.example.com"
+    description: "Producción"
+
+tags:
+  - name: "Inference"
+    description: "Consultas al sistema AI/LLM"
+  - name: "Ingestion"
+    description: "Carga e indexación de documentos"
+  - name: "Operations"
+    description: "Operación y monitoreo"
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /api/v1/query:
+    post:
+      summary: "Consulta al sistema AI/LLM"
+      description: "Recibe una consulta en lenguaje natural, ejecuta el pipeline RAG y retorna una respuesta contextualizada con fuentes."
+      tags: ["Inference"]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QueryRequest"
+            example:
+              query: "¿Qué rutina básica de cuidados recomiendas para mi perro senior pequeño?"
+              session_id: "sess_demo_001"
+              pet_profile:
+                species: "dog"
+                age_group: "senior"
+                size: "small"
+                energy: "medium"
+              context_filter:
+                category: "care"
+      responses:
+        "200":
+          description: "Respuesta generada exitosamente"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryResponse"
+              example:
+                response: "Para un perro senior pequeño se recomienda mantener una rutina estable, ejercicio moderado, control de peso y chequeos regulares."
+                sources:
+                  - document_id: "doc_001"
+                    chunk_text: "Los perros senior de raza pequeña suelen requerir control de peso, chequeos regulares y actividad moderada."
+                    similarity_score: 0.92
+                tokens_used: 842
+                latency_ms: 1432.5
+                session_id: "sess_demo_001"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/ingest:
+    post:
+      summary: "Ingesta de documentos al vector store"
+      description: "Recibe documentos curados, genera chunks y embeddings, y los indexa en el vector store."
+      tags: ["Ingestion"]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IngestRequest"
+            example:
+              documents:
+                - content: "Los perros senior de raza pequeña suelen requerir control de peso, chequeos veterinarios regulares y actividad moderada."
+                  metadata:
+                    category: "care"
+                    species: "dog"
+                    life_stage: "senior"
+                - content: "El cambio de alimento debe hacerse de forma gradual en 7 a 10 días para evitar molestias digestivas."
+                  metadata:
+                    category: "nutrition"
+                    species: "dog"
+              source_type: "text"
+      responses:
+        "200":
+          description: "Documentos indexados exitosamente"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestResponse"
+              example:
+                status: "success"
+                indexed_docs: 2
+                errors: []
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/health:
+    get:
+      summary: "Estado del sistema"
+      description: "Verifica el estado de los componentes principales del sistema: API, LLM, vector store y base de datos."
+      tags: ["Operations"]
+      security: []
+      responses:
+        "200":
+          description: "Sistema operando normalmente o degradado"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              example:
+                status: "healthy"
+                components:
+                  llm_api: "healthy"
+                  vector_store: "healthy"
+                  database: "healthy"
+                timestamp: "2026-04-06T23:00:00Z"
+        "503":
+          description: "Sistema degradado o no disponible"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: "API Key requerida para endpoints protegidos."
+
+  schemas:
+    QueryRequest:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          description: "Consulta en lenguaje natural del usuario."
+        session_id:
+          type: string
+          description: "ID opcional de sesión para trazabilidad o contexto conversacional."
+        pet_profile:
+          type: object
+          description: "Contexto estructurado de la mascota para personalización."
+          properties:
+            species:
+              type: string
+              enum: ["dog", "cat", "other"]
+            age_group:
+              type: string
+              enum: ["puppy", "adult", "senior"]
+            size:
+              type: string
+              enum: ["small", "medium", "large"]
+            energy:
+              type: string
+              enum: ["low", "medium", "high"]
+        context_filter:
+          type: object
+          description: "Filtros opcionales para restringir la búsqueda semántica."
+          properties:
+            category:
+              type: string
+              enum: ["care", "nutrition", "behavior", "general"]
+
+    SourceItem:
+      type: object
+      properties:
+        document_id:
+          type: string
+          description: "ID del documento o chunk recuperado."
+        chunk_text:
+          type: string
+          description: "Texto del fragmento utilizado como contexto."
+        similarity_score:
+          type: number
+          format: float
+          description: "Puntaje de similitud semántica del chunk recuperado."
+
+    QueryResponse:
+      type: object
+      properties:
+        response:
+          type: string
+          description: "Respuesta generada por el LLM."
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceItem"
+        tokens_used:
+          type: integer
+          description: "Número total estimado de tokens consumidos."
+        latency_ms:
+          type: number
+          format: float
+          description: "Latencia total de la consulta en milisegundos."
+        session_id:
+          type: string
+          description: "ID de sesión asociado a la respuesta."
+
+    IngestDocument:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          description: "Contenido textual del documento a indexar."
+        metadata:
+          type: object
+          description: "Metadatos para filtrado y trazabilidad."
+          properties:
+            category:
+              type: string
+            species:
+              type: string
+            life_stage:
+              type: string
+            source:
+              type: string
+
+    IngestRequest:
+      type: object
+      required:
+        - documents
+      properties:
+        documents:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/IngestDocument"
+        source_type:
+          type: string
+          enum: ["text", "pdf", "url", "database"]
+          description: "Tipo de origen de los documentos."
+
+    IngestResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: ["success", "partial", "failed"]
+        indexed_docs:
+          type: integer
+          description: "Número de documentos indexados exitosamente."
+        errors:
+          type: array
+          items:
+            type: string
+          description: "Errores ocurridos durante la ingesta."
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: ["healthy", "degraded", "unhealthy"]
+        components:
+          type: object
+          properties:
+            llm_api:
+              type: string
+              enum: ["healthy", "degraded", "unhealthy"]
+            vector_store:
+              type: string
+              enum: ["healthy", "degraded", "unhealthy"]
+            database:
+              type: string
+              enum: ["healthy", "degraded", "unhealthy"]
+        timestamp:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+          description: "Mensaje descriptivo del error."
+        error_code:
+          type: string
+          description: "Código interno opcional para trazabilidad."
+
+  responses:
+    BadRequest:
+      description: "Request malformado o con datos inválidos"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            detail: "El campo query es obligatorio."
+            error_code: "BAD_REQUEST"
+
+    Unauthorized:
+      description: "API Key inválida o ausente"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            detail: "No autorizado."
+            error_code: "UNAUTHORIZED"
+
+    UnprocessableEntity:
+      description: "Error de validación del request body"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            detail: "El request body no cumple con el esquema esperado."
+            error_code: "VALIDATION_ERROR"
+
+    InternalError:
+      description: "Error interno del servidor"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            detail: "Ocurrió un error interno inesperado."
+            error_code: "INTERNAL_ERROR"

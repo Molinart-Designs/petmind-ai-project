@@ -222,17 +222,367 @@ Se identifican los siguientes riesgos iniciales del proyecto para anticipar deci
 
 ## 3. Diseño de Arquitectura AI/LLM
 
-### 3.1 ...
+### 3.1 Diagrama de Arquitectura General (Nivel C4 — Contexto y Contenedor)
 
-### 3.2 ...
+> 📌 **Nota:** Diagramas C4: **contexto** en `docs/diagrams/c4-context.png` (fuente `docs/diagrams/c4-context.svg`); **contenedores** en `docs/diagrams/c4-container.png` (fuente `docs/diagrams/c4-container.svg`). Copia legada unificada: `docs/architecture/architecture_general_es.png`.  
+> La arquitectura lógica del sistema se compone de una API backend AI/LLM desplegada en AWS, un pipeline RAG para recuperación semántica, un proveedor LLM externo, una base de datos relacional para persistencia operativa y un vector store para recuperación contextual.
 
-### 3.3 ...
+#### Descripción general de arquitectura
 
-### 3.4 ...
+PetMind AI está diseñado como un sistema backend AI/LLM desacoplado del cliente final. Aunque el producto de negocio contempla una app móvil, la arquitectura evaluable del curso se centra en una API REST que puede ser consumida por clientes externos.
+
+A alto nivel, la solución consta de los siguientes bloques:
+
+1. **Cliente consumidor**
+   - Cliente HTTP, Postman o frontend futuro
+   - Envía consultas, carga documentos y valida salud del sistema
+
+2. **Capa API**
+   - FastAPI expone endpoints `/api/v1/query`, `/api/v1/ingest` y `/api/v1/health`
+   - Maneja autenticación, validación, rate limiting y logging
+
+3. **Orquestador AI/LLM**
+   - Construye el flujo de consulta
+   - Ejecuta retrieval
+   - Ensambla prompt con contexto y restricciones
+   - Invoca el modelo LLM
+
+4. **Pipeline RAG**
+   - Ingesta documental
+   - Chunking
+   - Embeddings
+   - Indexación y recuperación semántica
+
+5. **Modelo LLM Base**
+   - OpenAI como proveedor principal
+   - Genera respuestas con base en el contexto recuperado y reglas de comportamiento
+
+6. **Vector Store**
+   - Opción principal: PostgreSQL + pgvector
+   - Opción alternativa: ChromaDB
+   - Almacena embeddings y chunks documentales
+
+7. **Base de datos operativa**
+   - PostgreSQL
+   - Guarda sesiones, metadatos, documentos, consultas y resultados de observabilidad
+
+8. **Observabilidad y monitoreo**
+   - Logging estructurado
+   - Métricas operativas
+   - Health checks por componente
+   - Integración posterior con CloudWatch
+
+#### Actores externos
+
+- Dueño de mascota / usuario final
+- Administrador o curador de conocimiento
+- Instructor o revisor técnico
+- Proveedor externo LLM (OpenAI)
+
+---
+
+### 3.2 Descripción de Componentes Arquitectónicos
+
+| Componente              | Tecnología / Servicio                       | Responsabilidad Principal                                                        | Justificación de Selección                                                            |
+| ----------------------- | ------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| API Backend             | FastAPI + Python 3.11                       | Exponer endpoints REST, validación, autenticación, manejo de errores y respuesta | Alta velocidad de desarrollo, tipado, ecosistema AI fuerte y documentación automática |
+| Orquestador LLM         | LangChain o LlamaIndex                      | Construir flujo RAG, composición de prompts, recuperación y llamada al LLM       | Reduce complejidad de integración y acelera experimentación                           |
+| Modelo LLM Base         | OpenAI GPT-4o-mini o equivalente            | Generación de respuestas personalizadas en lenguaje natural                      | Buen balance entre costo, capacidad y velocidad                                       |
+| Vector Store            | PostgreSQL + pgvector                       | Persistencia semántica y recuperación contextual                                 | Permite unificar almacenamiento estructurado y vectorial en una misma base            |
+| Base de Datos Operativa | PostgreSQL                                  | Persistencia de documentos, sesiones, consultas y metadatos                      | Solución robusta, madura y escalable                                                  |
+| Embeddings              | OpenAI Embeddings                           | Transformar chunks a representaciones vectoriales                                | Integración directa con el stack AI seleccionado                                      |
+| Seguridad               | API Key / JWT                               | Proteger endpoints y controlar acceso                                            | Suficiente para la versión inicial del curso                                          |
+| Observabilidad          | Logging JSON + métricas + CloudWatch futuro | Trazabilidad, errores, latencia y consumo de tokens                              | Permite operación y diagnóstico desde etapas tempranas                                |
+| Infraestructura         | Docker + Docker Compose + AWS               | Entorno local reproducible y despliegue cloud                                    | Facilita reproducibilidad y cumplimiento del curso                                    |
+
+---
+
+### 3.3 Diagrama de Flujo de Datos e Integración
+
+> 📌 **Nota:** El **flujo de datos** se entrega en `docs/diagrams/data-flow.png` (fuente: `docs/diagrams/data-flow.svg`). Copia legada: `docs/architecture/data_flow_es.png`.
+
+#### Flujo principal de consulta
+
+1. El cliente envía una solicitud a `POST /api/v1/query`
+2. La API valida autenticación, esquema y límites básicos
+3. Se extrae el contexto de la mascota y filtros opcionales
+4. El retriever consulta el vector store y obtiene los chunks más relevantes
+5. El orquestador construye el prompt final con:
+   - system prompt
+   - contexto documental
+   - perfil de mascota
+   - consulta del usuario
+6. El sistema invoca al modelo LLM
+7. Se valida el output
+8. La API devuelve:
+   - respuesta
+   - fuentes
+   - tokens usados
+   - latencia
+9. Se registran logs y métricas
+
+#### Flujo de ingesta
+
+1. El cliente envía documentos a `POST /api/v1/ingest`
+2. La API valida el payload
+3. El pipeline divide contenido en chunks
+4. Se generan embeddings
+5. Los chunks y embeddings se guardan en el vector store
+6. La API devuelve el resultado de indexación
+
+#### Flujo de salud
+
+1. El cliente llama a `GET /api/v1/health`
+2. La API verifica:
+   - disponibilidad de LLM
+   - conexión al vector store
+   - conexión a base de datos
+3. Retorna estado consolidado del sistema
+
+---
+
+### 3.4 Estrategia de Diseño de Prompts y RAG
+
+#### System Prompt Base
+
+Eres PetMind AI, un asistente especializado en cuidado de mascotas.
+
+Tu función es responder preguntas de forma clara, útil y segura usando únicamente:
+
+1. el contexto documental recuperado,
+2. el perfil estructurado de la mascota,
+3. la consulta del usuario.
+
+RESTRICCIONES:
+
+- No inventes información.
+- Si no tienes contexto suficiente, indica claramente que no cuentas con suficiente información.
+- No emitas diagnósticos veterinarios concluyentes.
+- Si la consulta implica riesgo de salud, urgencia médica o señales de alarma, recomienda acudir con un veterinario.
+- No presentes tus respuestas como sustituto de atención profesional.
+- Prioriza respuestas prácticas, comprensibles y accionables.
+
+FORMATO DE RESPUESTA:
+
+- Responde en español.
+- Usa tono claro, empático y profesional.
+- Si aplica, estructura la respuesta en:
+  1. recomendación principal
+  2. puntos a observar
+  3. cuándo buscar ayuda profesional
+
+### Estrategia de Recuperación (RAG)
+
+| Parámetro            | Valor Inicial                       | Justificación                                                |
+| -------------------- | ----------------------------------- | ------------------------------------------------------------ |
+| Tipo de chunking     | semántico o por longitud controlada | permite preservar sentido de recomendaciones y consejos      |
+| Tamaño de chunk      | 500–800 caracteres                  | equilibrio entre contexto útil y precisión de retrieval      |
+| Overlap              | 80–120 caracteres                   | reduce pérdida de contexto entre fragmentos                  |
+| Modelo de embeddings | OpenAI embeddings                   | integración simple con el stack y buena calidad semántica    |
+| Similitud            | cosine similarity                   | estándar en recuperación semántica                           |
+| Top-k                | 4                                   | suficiente para contexto útil sin inflar demasiado el prompt |
+| Umbral mínimo        | 0.75 inicial                        | evita contexto débil o irrelevante                           |
+| Re-ranking           | no en v1                            | se deja para una iteración futura                            |
+| Filtro por metadata  | sí                                  | categoría, especie, etapa de vida                            |
+
+Justificación de RAG
+
+Se selecciona una arquitectura RAG porque el sistema debe responder con base en conocimiento curado y controlado, reduciendo alucinaciones y mejorando trazabilidad. Un LLM sin retrieval produciría respuestas más genéricas y menos auditables. RAG permite actualizar el conocimiento sin reentrenar el modelo base y facilita explicar de dónde proviene la respuesta.
+
+### Arquitectura física (equivalencias por nube)
+
+Justificación de RAG
+
+Se selecciona una arquitectura RAG porque el sistema debe responder con base en conocimiento curado y controlado, reduciendo alucinaciones y mejorando trazabilidad. Un LLM sin retrieval produciría respuestas más genéricas y menos auditables. RAG permite actualizar el conocimiento sin reentrenar el modelo base y facilita explicar de dónde proviene la respuesta.
+
+### Arquitectura física (equivalencias por nube)
+
+| Capa            | AWS             | GCP                   | Azure                         |
+| --------------- | --------------- | --------------------- | ----------------------------- |
+| API / Ingesta   | ECS / Lambda    | Cloud Run / Functions | Azure Functions / App Service |
+| Base relacional | RDS PostgreSQL  | Cloud SQL             | Azure Database for PostgreSQL |
+| Storage         | S3              | GCS                   | Blob Storage                  |
+| Observabilidad  | CloudWatch      | Cloud Monitoring      | Azure Monitor                 |
+| Secretos        | Secrets Manager | Secret Manager        | Key Vault                     |
 
 ## 4. Diseño de APIs y Conectores
 
+### 4.1 Especificación de Endpoints
+
+| Endpoint         | Método | Descripción                                                                                   | Request Body / Params                                                                      | Response Schema                                                                                         |
+| ---------------- | ------ | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `/api/v1/query`  | `POST` | Recibe una consulta en lenguaje natural, ejecuta retrieval y genera respuesta contextualizada | `{"query": string, "session_id": string, "pet_profile": object, "context_filter": object}` | `{"response": string, "sources": array, "tokens_used": int, "latency_ms": float, "session_id": string}` |
+| `/api/v1/ingest` | `POST` | Recibe documentos y los indexa en el vector store                                             | `{"documents": array, "source_type": string}`                                              | `{"status": string, "indexed_docs": int, "errors": array}`                                              |
+| `/api/v1/health` | `GET`  | Verifica estado del sistema y sus dependencias                                                | N/A                                                                                        | `{"status": string, "components": object}`                                                              |
+
+Se entrega especificación OpenAPI inicial en:
+
+- `docs/api/openapi.yaml` (especificación OpenAPI única del proyecto)
+
+### 4.2 Autenticación y Autorización (Diseño Inicial)
+
+| Campo                      | Descripción                                                       |
+| -------------------------- | ----------------------------------------------------------------- |
+| **Mecanismo Auth**         | API Key en header para v1; JWT como evolución                     |
+| **Proveedor de Identidad** | No aplica en v1 técnica del curso; escalable a Auth0              |
+| **Gestión de Secrets**     | Variables de entorno en desarrollo; Secrets Manager en producción |
+| **Rate Limiting**          | Límite básico por IP o API key                                    |
+| **Roles definidos**        | `admin`, `consumer`                                               |
+
+### 4.3 Conectores de Fuentes de Datos (Diseño Inicial)
+
+| Fuente de Datos                | Tipo                             | Conector/SDK              | Frecuencia de Sync                | Manejo de Errores                     |
+| ------------------------------ | -------------------------------- | ------------------------- | --------------------------------- | ------------------------------------- |
+| Documentos curados de mascotas | Texto / markdown / PDF procesado | Pipeline local de ingesta | Bajo demanda                      | Validación + errores por documento    |
+| Base de datos PostgreSQL       | SQL                              | SQLAlchemy / psycopg      | Tiempo real para datos operativos | Retry + logging                       |
+| OpenAI API                     | Servicio externo LLM             | SDK oficial               | Tiempo real                       | Timeout, retry y logging estructurado |
+
 ## 5. Seguridad, Cumplimiento y Ética
+
+### 5.1 Modelo de Amenazas y Controles de Seguridad
+
+PetMind AI procesa consultas en lenguaje natural y genera respuestas apoyadas en un pipeline RAG. Debido a esta arquitectura, el sistema está expuesto tanto a amenazas tradicionales de APIs como a riesgos específicos de sistemas AI/LLM, especialmente prompt injection, fuga de datos vía contexto recuperado, alucinaciones y abuso del modelo. En esta primera versión se adopta un enfoque preventivo con controles de autenticación, validación de entrada, límites de uso, restricciones de prompt y filtrado básico de salida.
+
+| Amenaza / Riesgo                               | Vector de Ataque                                                                                     | Nivel       | Control Implementado                                                                                         | Justificación Técnica                                                                                                                                    |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Prompt Injection                               | El usuario intenta forzar instrucciones como “ignora el contexto” o “revela información interna”     | **ALTO**    | Guardrails de input + system prompt restrictivo + rechazo de instrucciones fuera de alcance                  | Los sistemas RAG/LLM son sensibles a instrucciones maliciosas en lenguaje natural; el system prompt y las validaciones reducen la probabilidad de desvío |
+| Data Leakage por contexto RAG                  | El sistema podría devolver fragmentos sensibles o no autorizados del corpus documental               | **ALTO**    | Corpus curado y controlado + filtrado por metadata + revisión del contenido indexado                         | El proyecto usa conocimiento controlado sobre mascotas; limitar el corpus y aplicar filtros reduce el riesgo de exposición indebida                      |
+| Hallucinations / Respuestas incorrectas        | El LLM genera respuestas falsas, ambiguas o demasiado seguras sin suficiente evidencia               | **ALTO**    | Uso de RAG + umbral de similitud + respuesta conservadora cuando falta contexto + evaluación LLM             | El riesgo no se elimina, pero se reduce al condicionar la generación a contexto recuperado y medir calidad con métricas formales                         |
+| Recomendaciones médicas indebidas              | El usuario formula consultas de salud animal y el sistema responde como si fuera diagnóstico clínico | **ALTO**    | Restricción explícita en prompt + disclaimers + redirección a veterinario en casos críticos                  | El sistema no debe sustituir atención profesional; este control es clave por seguridad y ética                                                           |
+| Exposición de API keys o secretos              | Credenciales filtradas en código, repositorio o logs                                                 | **CRÍTICO** | Variables de entorno + `.env` excluido por `.gitignore` + `.env.example` sin valores reales                  | El repositorio público o compartido es una superficie de alto riesgo; separar secretos del código es obligatorio                                         |
+| Uso abusivo del API / DoS                      | Exceso de requests, automatización abusiva o scraping de endpoints                                   | **MEDIO**   | API Key + rate limiting + logs por request                                                                   | Protege recursos limitados y ayuda a evitar consumo excesivo del proveedor LLM                                                                           |
+| Ingesta de documentos inválidos o maliciosos   | Un usuario autorizado intenta cargar documentos corruptos, irrelevantes o manipulados                | **MEDIO**   | Validación de payload + control de roles para ingesta + revisión del corpus                                  | La calidad y seguridad del RAG dependen directamente del conocimiento indexado                                                                           |
+| Manipulación de metadata                       | Un atacante altera campos como categoría, especie o etapa de vida para contaminar retrieval          | **MEDIO**   | Validación de esquemas y enums + saneamiento de entrada                                                      | Mantener metadatos consistentes evita recuperación errónea o abusiva                                                                                     |
+| Logs con información sensible                  | Datos de entrada o contexto podrían terminar completos en logs                                       | **MEDIO**   | Logging estructurado con criterio mínimo necesario + evitar almacenar secretos y cuerpos completos sensibles | La observabilidad no debe comprometer privacidad ni seguridad operativa                                                                                  |
+| Dependencia del proveedor LLM                  | Falla, timeout o degradación del servicio de OpenAI                                                  | **MEDIO**   | Health checks + manejo de errores + timeouts + respuestas degradadas controladas                             | El proveedor externo es un componente crítico; la API debe fallar de forma controlada                                                                    |
+| Acceso no autorizado a endpoints protegidos    | Uso de endpoints `/query` o `/ingest` sin autenticación válida                                       | **ALTO**    | API Key en todos los endpoints excepto `/health`                                                             | Es el control mínimo exigido en esta etapa para evitar abuso y acceso no autorizado                                                                      |
+| Recuperación semántica de contexto irrelevante | El retriever devuelve chunks poco relacionados que degradan la respuesta                             | **MEDIO**   | Top-k controlado + threshold de similitud + filtros por metadata                                             | Este riesgo afecta calidad más que seguridad, pero impacta directamente la confiabilidad del sistema                                                     |
+
+#### Controles iniciales priorizados
+
+Los controles prioritarios para la primera versión del proyecto son:
+
+1. **Autenticación en endpoints protegidos**
+   - `/query` y `/ingest` requieren API Key
+   - `/health` permanece abierto solo para monitoreo básico
+
+2. **Separación estricta de secretos**
+   - uso de variables de entorno
+   - archivo `.env.example` sin valores reales
+   - exclusión de `.env` y credenciales en `.gitignore`
+
+3. **Prompt seguro y restrictivo**
+   - prohibición de diagnósticos concluyentes
+   - prohibición de inventar información
+   - instrucción explícita de responder solo con contexto suficiente
+
+4. **Controles de retrieval**
+   - corpus curado
+   - filtros por metadata
+   - threshold de similitud
+   - top-k limitado
+
+5. **Observabilidad mínima**
+   - logs estructurados
+   - trazabilidad por request
+   - visibilidad de errores, latencia y consumo de tokens
+
+#### Riesgos residuales
+
+Aunque estos controles reducen significativamente la superficie de ataque, persisten riesgos residuales en la primera versión:
+
+- el sistema todavía puede producir respuestas incompletas o ambiguas;
+- el filtrado semántico no garantiza perfección en todos los casos;
+- la protección contra prompt injection en v1 será básica y no infalible;
+- la validación de salida no reemplaza una revisión humana en contextos sensibles.
+
+Por estas razones, PetMind AI se posiciona como un sistema de **orientación inteligente**, no como una herramienta de decisión clínica ni de diagnóstico veterinario.
+
+### 5.2 Cumplimiento Regulatorio
+
+Aunque PetMind AI no se diseña como sistema clínico ni como expediente médico veterinario, sí procesa entradas de usuarios y genera recomendaciones que pueden influir en decisiones relacionadas con el bienestar animal. Por ello, la solución incorpora controles básicos de privacidad, seguridad y uso responsable de IA, con el objetivo de mantenerse alineada con buenas prácticas de cumplimiento y minimizar riesgos éticos y operativos.
+
+En esta primera versión, el proyecto se enfoca en un dominio de orientación general sobre mascotas y no en diagnóstico médico. Esto reduce la carga regulatoria directa, pero no elimina la necesidad de documentar límites de uso, manejo de datos y mecanismos de mitigación.
+
+| Regulación / Marco                            | Requerimiento Aplicable                                                                             | Control Implementado                                                                                                            | Evidencia                                               |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Principios de privacidad de datos             | Minimizar exposición de información personal y evitar almacenamiento innecesario de datos sensibles | El sistema no requiere datos altamente sensibles para funcionar; se limita a contexto básico de mascota y consultas del usuario | Diseño funcional del sistema y esquema de request       |
+| Buenas prácticas de seguridad de aplicaciones | Protección de secretos, autenticación y control de acceso                                           | Uso de variables de entorno, `.env.example`, `.gitignore`, autenticación por API Key en endpoints protegidos                    | Estructura del repositorio y configuración del proyecto |
+| Uso responsable de IA                         | No presentar el sistema como autoridad clínica ni como sustituto profesional                        | Prompt restrictivo, disclaimers y límites explícitos de alcance                                                                 | Sección de prompt base y modelo de amenazas             |
+| Transparencia frente al usuario               | Informar que la respuesta es generada por IA y basada en contexto documental                        | La solución se documenta como sistema AI/LLM con RAG y fuentes recuperadas                                                      | README y documentación técnica                          |
+| Gestión de riesgos en recomendaciones         | Evitar decisiones automáticas de alto impacto sin revisión humana                                   | El sistema no emite diagnósticos concluyentes y deriva a veterinario en casos sensibles                                         | Prompt base, controles de salida y sección ética        |
+
+#### Enfoque de cumplimiento adoptado
+
+El proyecto adopta un enfoque de **cumplimiento proporcional al alcance**:
+
+- no se procesan datos financieros ni clínicos estructurados;
+- no se promete exactitud médica ni automatización de decisiones de alto impacto;
+- no se entrena un modelo propio con datos privados del usuario;
+- no se permite que el sistema actúe como reemplazo de un veterinario.
+
+#### Limitaciones de cumplimiento en esta versión
+
+- no se implementa aún un módulo formal de consentimiento explícito por categorías de datos;
+- no existe aún panel de borrado o portabilidad de datos de usuario;
+- no se incluye gestión avanzada de retención y auditoría completa;
+- no se ha realizado una revisión legal específica por país, ya que el proyecto está en fase académica/técnica.
+
+Aun con estas limitaciones, la arquitectura y documentación dejan una base adecuada para evolucionar hacia una solución con mayor madurez regulatoria en futuras versiones.
+
+---
+
+### 5.3 Marco Ético de la Solución AI
+
+PetMind AI debe operar bajo un marco ético claro porque interactúa con usuarios que podrían depositar confianza significativa en sus respuestas. Aunque el dominio del proyecto es cuidado general de mascotas y no diagnóstico clínico, existe el riesgo de que usuarios interpreten recomendaciones como verdades absolutas o como sustituto de orientación profesional.
+
+Por ello, el sistema se diseña bajo cuatro principios éticos centrales:
+
+1. **Transparencia**
+   - El usuario debe saber que interactúa con una solución AI/LLM.
+   - Las respuestas deben estar apoyadas por fuentes recuperadas cuando sea posible.
+
+2. **No sustitución de criterio profesional**
+   - El sistema puede orientar, resumir y sugerir, pero no diagnosticar clínicamente.
+   - En casos sensibles, debe recomendar atención veterinaria.
+
+3. **Reducción de alucinaciones**
+   - El sistema debe minimizar respuestas inventadas o no sustentadas.
+   - Si no existe suficiente contexto, debe reconocer incertidumbre.
+
+4. **Uso responsable del contexto del usuario**
+   - El perfil de la mascota se usa para personalizar respuestas, no para inferencias invasivas ni decisiones críticas automatizadas.
+
+| Dimensión Ética                  | Riesgo Identificado                                                                          | Mecanismo de Mitigación                                                                             |
+| -------------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Transparencia                    | El usuario puede pensar que la respuesta proviene de una fuente experta humana               | Divulgación explícita de que se trata de un sistema AI/LLM y presentación de fuentes cuando existan |
+| Alucinaciones                    | El modelo puede generar información falsa o demasiado segura                                 | Uso de RAG, threshold de similitud, respuesta conservadora cuando falta contexto y evaluación LLM   |
+| Autoridad indebida               | El usuario podría seguir recomendaciones como si fueran diagnóstico o indicación veterinaria | Restricciones en prompt, disclaimers y redirección a atención profesional en temas sensibles        |
+| Sesgo del contenido              | El corpus podría privilegiar ciertos enfoques o recomendaciones no equilibradas              | Curación manual del corpus y revisión progresiva del conocimiento cargado                           |
+| Privacidad                       | Las consultas del usuario podrían incluir información innecesaria o sensible                 | Minimización de datos solicitados y control del contenido almacenado en logs                        |
+| Dependencia excesiva del sistema | El usuario puede delegar decisiones importantes de cuidado sin validación externa            | Lenguaje prudente, límites de alcance y recomendación de revisión profesional cuando corresponda    |
+
+#### Postura ética del proyecto
+
+PetMind AI se posiciona como una herramienta de **acompañamiento inteligente**, no como un reemplazo del conocimiento veterinario ni como sistema de decisión autónoma. El objetivo es ayudar al usuario a entender mejor información relevante, no desplazar la responsabilidad humana en decisiones críticas.
+
+#### Decisiones éticas aplicadas al diseño
+
+- se evita lenguaje absolutista o clínico cuando no hay base suficiente;
+- se prioriza utilidad y claridad sobre aparente autoridad;
+- se permite que el sistema diga “no tengo suficiente información”;
+- se incorpora el perfil de la mascota solo para personalizar, no para clasificar riesgo médico en forma concluyente;
+- se favorece trazabilidad mediante fuentes recuperadas.
+
+#### Evolución ética futura
+
+En versiones futuras, sería recomendable añadir:
+
+- mecanismos explícitos de feedback del usuario sobre respuestas inseguras o incorrectas;
+- revisión humana sobre categorías de consultas sensibles;
+- políticas más detalladas de retención y eliminación de datos;
+- evaluación sistemática de sesgos del corpus y de calidad de respuesta por categoría;
+- trazabilidad ampliada con herramientas de observabilidad LLM.
 
 ## 6. Implementación y Configuración de Infraestructura
 

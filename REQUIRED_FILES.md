@@ -1,8 +1,6 @@
-# REQUIRED_FILES - Semana 2
+# REQUIRED_FILES — E1 + E2 + estructura recomendada
 
-Este checklist aplica al entregable inicial (E1).
-
-## Archivos minimos
+## Curso (canónico)
 
 - [x] `README.md`
 - [x] `.env.example`
@@ -10,18 +8,31 @@ Este checklist aplica al entregable inicial (E1).
 - [x] `Makefile`
 - [x] `requirements.txt`
 - [x] `docs/PROJECT_DOCUMENTATION.md`
+- [x] `docs/api/openapi.yaml`
+- [x] `docs/adr/ADR-001.md` (índice → contenido largo)
+- [x] `docs/adr/ADR-002.md`
+- [x] `docs/adr/ADR-003.md`
+- [x] `docs/adr/ADR-001-openai-as-llm-base.md`
+- [x] `docs/adr/ADR-002-postgresql-pgvector-as-vector-store.md`
+- [x] `docs/adr/ADR-003-fastapi-as-framework.md`
 
-## Estructura minima
+## Diagramas (E2 — una de dos rutas)
 
-- [x] `src/api/`
-- [x] `src/core/`
-- [x] `src/rag/`
-- [x] `src/security/`
-- [x] `tests/`
+- [x] Legado: `docs/architecture/*_es.svg` **o**
+- [x] Recomendado: `docs/diagrams/c4-context.svg`, `c4-container.svg`, `data-flow.svg`
 
-## Criterios funcionales de Semana 2
+## Estructura extendida (pre-E3)
 
-- [ ] Seccion 1 del documento completada (Resumen Ejecutivo).
-- [ ] Seccion 2 del documento completada (Analisis y Requerimientos).
-- [ ] Minimo 5 requerimientos funcionales.
-- [ ] Minimo 4 requerimientos no funcionales.
+- [x] `.github/workflows/ci.yml` + `cd.yml` (CD placeholder)
+- [x] `Dockerfile`, `docker-compose.yml`, `.dockerignore`
+- [x] `pytest.ini`, `tests/unit`, `tests/integration`, `tests/load`
+- [x] `notebooks/rag_evaluation.ipynb`
+- [x] `docs/threat-model.md`, `docs/ethics-and-compliance.md`, `docs/deployment-guide.md`
+- [x] `alembic/` + `alembic.ini`
+
+## Verificación automática
+
+```bash
+make checklist-e2
+make test
+```

@@ -4,77 +4,86 @@
 
 ---
 
-## 📌 Descripción
+## Convenciones del curso (no romper E2)
 
-**PetMind AI** es el backend inteligente de una plataforma de acompañamiento para dueños de mascotas. Su objetivo es centralizar conocimiento curado sobre nutrición, comportamiento, rutinas y cuidados generales, y convertirlo en respuestas útiles, claras y personalizadas mediante un sistema **AI/LLM + RAG**.
-
-En esta versión del proyecto, el foco está en el **backend evaluable del curso**: una API REST que recibe consultas en lenguaje natural, recupera contexto relevante desde una base de conocimiento y genera respuestas con fuentes asociadas. Aunque el producto real contempla una app móvil React Native, este repositorio se concentra en el componente AI/LLM desplegado en la nube y listo para integrarse con clientes web o mobile.
+| Artefacto | Ubicación canónica |
+| --------- | ------------------- |
+| Documentación principal | `docs/PROJECT_DOCUMENTATION.md` |
+| OpenAPI | `docs/api/openapi.yaml` (única fuente) |
+| ADRs (índice + contenido) | `docs/adr/ADR-00x.md` + `docs/adr/ADR-00x-*.md` |
 
 ---
 
-## 🏗️ Arquitectura
-
-La solución sigue una arquitectura **RAG (Retrieval-Augmented Generation)**. El flujo general es:
-
-1. El cliente envía una consulta al endpoint `/api/v1/query`
-2. La API valida la solicitud y el contexto de la mascota
-3. El motor RAG recupera documentos relevantes desde el vector store
-4. El orquestador construye el prompt con contexto recuperado
-5. El modelo LLM genera una respuesta controlada y segura
-6. La API devuelve la respuesta junto con fuentes, latencia y metadatos
-
-### Componentes principales
-
-- **FastAPI** para la API REST
-- **OpenAI** como proveedor LLM
-- **LangChain o LlamaIndex** para orquestación
-- **PostgreSQL + pgvector** o **ChromaDB** para recuperación semántica
-- **Docker / Docker Compose** para entorno local reproducible
-- **AWS** para despliegue cloud
-- **GitHub Actions** para CI/CD
-
-### Diagrama
-
-Coloca aquí tu diagrama cuando lo tengas listo:
-
-````md
-## Estructura creada
+## Estructura del repositorio
 
 ```text
 ProyectoAI/
-├── README.md
-├── .env.example
-├── .gitignore
-├── Makefile
-├── requirements.txt
-├── REQUIRED_FILES.md
+├── .github/workflows/
+│   ├── ci.yml
+│   └── cd.yml
+├── alembic/                 # migraciones (E3+)
+├── alembic.ini
+├── data/
+│   ├── raw/
+│   ├── processed/
+│   └── curated/
 ├── docs/
-│   └── PROJECT_DOCUMENTATION.md
+│   ├── PROJECT_DOCUMENTATION.md
+│   ├── adr/
+│   ├── api/openapi.yaml
+│   ├── architecture/        # diagramas legado E2
+│   ├── diagrams/            # C4 + flujo (recomendado)
+│   ├── threat-model.md
+│   ├── ethics-and-compliance.md
+│   └── deployment-guide.md
+├── notebooks/rag_evaluation.ipynb
+├── scripts/
 ├── src/
-│   ├── __init__.py
-│   ├── api/
-│   │   └── __init__.py
+│   ├── api/   (main, routes, schemas)
 │   ├── core/
-│   │   └── __init__.py
+│   ├── db/
 │   ├── rag/
-│   │   └── __init__.py
-│   └── security/
-│       └── __init__.py
-└── tests/
-    └── __init__.py
+│   ├── security/
+│   └── utils/
+├── tests/   (unit, integration, load)
+├── Dockerfile
+├── docker-compose.yml
+├── Makefile
+├── pytest.ini
+└── requirements.txt
 ```
-````
 
-## Comandos utiles
+---
+
+## Comandos útiles
 
 ```bash
 make check-structure
-make checklist-e1
+make checklist-e2
+make test
+uvicorn src.api.main:app --reload --port 8000
+# Docs interactivas: http://127.0.0.1:8000/docs
 ```
 
-## Siguiente paso (Semana 3-4)
+Docker (cuando tengas `.env`):
 
-- Diagrama C4.
-- Diagrama de flujo de datos.
-- ADR-001 y ADR-002.
-- OpenAPI inicial.
+```bash
+docker compose up --build
+```
+
+---
+
+## Estado por entregable
+
+- **E1:** alcance y requerimientos en `docs/PROJECT_DOCUMENTATION.md`.
+- **E2:** diagramas (`docs/diagrams/` o legado `docs/architecture/`), ADRs, OpenAPI, secciones 3–5 del documento; `make checklist-e2` en verde.
+- **E3:** implementar RAG completo, auth, CI/CD real, `cd.yml` y despliegue AWS.
+
+---
+
+## Diagramas
+
+- **Nueva convención:** `docs/diagrams/c4-context.svg`, `c4-container.svg`, `data-flow.svg` (+ `.png` para entrega).
+- **Legado E2:** `docs/architecture/architecture_general_es.svg`, `data_flow_es.svg`.
+
+`c4-container.svg` es hoy una copia provisional del contexto; sustitúyelo por el diagrama de contenedores definitivo cuando lo tengas.
