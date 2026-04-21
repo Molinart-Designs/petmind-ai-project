@@ -1,0 +1,20 @@
+{
+    "question": "What is a good feeding routine for my adult dog?",
+    "pet_profile": {
+      "species": "dog",
+      "breed": "Labrador",
+      "age_years": 4,
+      "life_stage": "adult",
+      "weight_kg": 28,
+      "sex": "male",
+      "neutered": true,
+      "conditions": [],
+      "notes": "Very active dog"
+    },
+    "filters": {
+      "category": "nutrition",
+      "species": "dog",
+      "life_stage": "adult"
+    },
+    "top_k": 4
+  }

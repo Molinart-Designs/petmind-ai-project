@@ -93,11 +93,31 @@ def _contains_any(text: str, keywords: set[str]) -> list[str]:
     return sorted(set(matches))
 
 
+def _sanitize_sources(retrieved_chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    allowed_keys = {
+        "document_id",
+        "chunk_id",
+        "title",
+        "source",
+        "category",
+        "species",
+        "life_stage",
+        "similarity_score",
+        "snippet",
+        "metadata",
+    }
+
+    sanitized_sources: list[dict[str, Any]] = []
+
+    for chunk in retrieved_chunks:
+        sanitized_chunk = {key: value for key, value in chunk.items() if key in allowed_keys}
+        sanitized_chunk.setdefault("metadata", {})
+        sanitized_sources.append(sanitized_chunk)
+
+    return sanitized_sources
+
+
 def assess_query_risk(question: str) -> GuardrailDecision:
-    """
-    Performs a lightweight risk assessment on the incoming user question.
-    This does not block all medical questions, but it does identify sensitive or urgent cases.
-    """
     normalized_question = _normalize_text(question)
 
     sensitive_matches = _contains_any(normalized_question, SENSITIVE_KEYWORDS)
@@ -134,10 +154,6 @@ def assess_retrieval_grounding(
     retrieved_chunks: list[dict[str, Any]],
     similarity_threshold: float,
 ) -> dict[str, Any]:
-    """
-    Evaluates whether retrieval results are strong enough to support a grounded answer.
-    Assumes each chunk may contain a similarity_score field between 0 and 1.
-    """
     if not retrieved_chunks:
         return {
             "has_sufficient_context": False,
@@ -181,9 +197,6 @@ def build_safe_fallback_answer(
     question: str,
     retrieved_chunks: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """
-    Builds a safe fallback response for cases where the system lacks enough grounded context.
-    """
     retrieved_chunks = retrieved_chunks or []
     risk = assess_query_risk(question)
 
@@ -193,12 +206,14 @@ def build_safe_fallback_answer(
         "is in distress, or the situation may be urgent."
     )
 
+    sanitized_sources = _sanitize_sources(retrieved_chunks)
+
     return {
         "answer": answer,
         "needs_vet_followup": True if risk.is_medical else risk.needs_vet_followup,
         "confidence": "low",
-        "sources": retrieved_chunks,
-        "retrieval_count": len(retrieved_chunks),
+        "sources": sanitized_sources,
+        "retrieval_count": len(sanitized_sources),
         "used_filters": {},
         "disclaimers": sorted(set(risk.disclaimers + [LOW_CONTEXT_DISCLAIMER])),
     }
@@ -210,12 +225,9 @@ def postprocess_answer(
     retrieved_chunks: list[dict[str, Any]],
     similarity_threshold: float,
 ) -> dict[str, Any]:
-    """
-    Applies post-generation guardrails and returns normalized response attributes
-    to be used by the orchestrator.
-    """
     risk = assess_query_risk(question)
     grounding = assess_retrieval_grounding(retrieved_chunks, similarity_threshold)
+    sanitized_sources = _sanitize_sources(retrieved_chunks)
 
     final_confidence = risk.confidence
     if not grounding["has_sufficient_context"]:
@@ -223,9 +235,7 @@ def postprocess_answer(
     elif risk.is_medical and final_confidence == "high":
         final_confidence = "medium"
 
-    final_disclaimers = sorted(
-        set(risk.disclaimers + grounding["disclaimers"])
-    )
+    final_disclaimers = sorted(set(risk.disclaimers + grounding["disclaimers"]))
 
     if risk.needs_vet_followup:
         final_answer = (
@@ -239,8 +249,8 @@ def postprocess_answer(
         "answer": final_answer,
         "needs_vet_followup": risk.needs_vet_followup or not grounding["has_sufficient_context"],
         "confidence": final_confidence,
-        "sources": retrieved_chunks,
-        "retrieval_count": len(retrieved_chunks),
+        "sources": sanitized_sources,
+        "retrieval_count": len(sanitized_sources),
         "used_filters": {},
         "disclaimers": final_disclaimers,
     }

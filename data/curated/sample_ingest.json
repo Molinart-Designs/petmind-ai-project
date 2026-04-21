@@ -1,0 +1,34 @@
+{
+    "source": "demo_batch",
+    "documents": [
+      {
+        "external_id": "ext-001",
+        "title": "Healthy feeding basics for adult dogs",
+        "content": "Adult dogs benefit from routine feeding schedules, portion control, fresh water access, and food choices appropriate to their age and activity level. Consistency in feeding times can support digestion and help maintain a healthy weight. Owners should monitor appetite changes and consult a veterinarian if they observe persistent vomiting, diarrhea, lethargy, or sudden refusal to eat.",
+        "category": "nutrition",
+        "species": "dog",
+        "life_stage": "adult",
+        "source_url": "https://example.com/dog-feeding-basics",
+        "tags": ["feeding", "routine", "adult-dog"],
+        "metadata": {
+          "reviewed_by": "petmind-demo",
+          "language": "en"
+        }
+      },
+      {
+        "external_id": "ext-002",
+        "title": "Hydration tips for senior dogs",
+        "content": "Senior dogs may need closer hydration monitoring, especially in warm weather or if they have reduced appetite. Owners should ensure constant access to clean water and observe for signs such as dry gums, unusual tiredness, or reduced urination. If a senior dog seems weak, confused, collapses, or has trouble breathing, prompt veterinary attention is recommended.",
+        "category": "hydration",
+        "species": "dog",
+        "life_stage": "senior",
+        "source_url": "https://example.com/senior-dog-hydration",
+        "tags": ["hydration", "senior-dog"],
+        "metadata": {
+          "reviewed_by": "petmind-demo",
+          "language": "en"
+        }
+      }
+    ]
+  }
+  
