@@ -1,5 +1,6 @@
 import pytest
-
+    
+from src.core.config import settings
 from src.rag.retriever import Retriever
 
 
@@ -86,7 +87,7 @@ async def test_retrieve_returns_results_and_calls_dependencies():
         "species": "dog",
         "life_stage": "adult",
     }
-    assert vector_store.last_similarity_threshold == 0.75
+    assert vector_store.last_similarity_threshold == settings.similarity_threshold
 
     assert len(results) == 1
     assert results[0]["chunk_id"] == "chunk-1"

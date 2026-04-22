@@ -59,10 +59,10 @@ class RAGOrchestrator:
             retrieved_chunks=retrieved_chunks,
             similarity_threshold=settings.similarity_threshold,
         )
-
-        if not grounding["has_sufficient_context"]:
+        
+        if not grounding["has_any_context"]:
             logger.warning(
-                "Insufficient retrieval grounding, returning fallback answer",
+                "No retrieval context found, returning fallback answer",
                 extra={
                     "matched_count": grounding["matched_count"],
                     "top_score": grounding["top_score"],

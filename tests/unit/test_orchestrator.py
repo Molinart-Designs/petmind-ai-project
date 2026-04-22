@@ -60,24 +60,9 @@ class FakeIngestionService:
 
 
 @pytest.mark.asyncio
-async def test_answer_returns_safe_fallback_when_grounding_is_insufficient():
+async def test_answer_returns_safe_fallback_when_no_context_is_found():
     llm_client = FakeLLMClient()
-    retriever = FakeRetriever(
-        results=[
-            {
-                "chunk_id": "chunk-1",
-                "document_id": "doc-1",
-                "title": "Weakly related content",
-                "source": "demo-source",
-                "category": "nutrition",
-                "species": "dog",
-                "life_stage": "adult",
-                "similarity_score": 0.40,
-                "snippet": "General pet wellness guidance.",
-                "metadata": {},
-            }
-        ]
-    )
+    retriever = FakeRetriever(results=[])
     ingestion_service = FakeIngestionService()
 
     orchestrator = RAGOrchestrator(
@@ -111,8 +96,7 @@ async def test_answer_returns_safe_fallback_when_grounding_is_insufficient():
 
     assert llm_client.called is False
     assert result["confidence"] == "low"
-    assert result["needs_vet_followup"] is False
-    assert result["retrieval_count"] == 1
+    assert result["retrieval_count"] == 0
     assert result["used_filters"] == {
         "category": "nutrition",
         "species": "dog",

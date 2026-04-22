@@ -1,6 +1,7 @@
 from src.security.guardrails import (
     DEFAULT_DISCLAIMER,
     LOW_CONTEXT_DISCLAIMER,
+    NO_CONTEXT_DISCLAIMER,
     SENSITIVE_CASE_DISCLAIMER,
     assess_query_risk,
     assess_retrieval_grounding,
@@ -41,11 +42,12 @@ def test_assess_retrieval_grounding_returns_false_when_no_chunks():
         similarity_threshold=0.75,
     )
 
+    assert result["has_any_context"] is False
     assert result["has_sufficient_context"] is False
     assert result["matched_count"] == 0
     assert result["top_score"] is None
     assert DEFAULT_DISCLAIMER in result["disclaimers"]
-    assert LOW_CONTEXT_DISCLAIMER in result["disclaimers"]
+    assert NO_CONTEXT_DISCLAIMER in result["disclaimers"]
 
 
 def test_assess_retrieval_grounding_returns_true_when_chunk_meets_threshold():
@@ -69,6 +71,7 @@ def test_assess_retrieval_grounding_returns_true_when_chunk_meets_threshold():
         similarity_threshold=0.75,
     )
 
+    assert result["has_any_context"] is True
     assert result["has_sufficient_context"] is True
     assert result["matched_count"] == 1
     assert result["top_score"] == 0.82
@@ -88,7 +91,7 @@ def test_build_safe_fallback_answer_returns_low_confidence_and_vet_guidance():
     assert result["needs_vet_followup"] is True
     assert result["retrieval_count"] == 0
     assert result["sources"] == []
-    assert LOW_CONTEXT_DISCLAIMER in result["disclaimers"]
+    assert NO_CONTEXT_DISCLAIMER in result["disclaimers"]
     assert "licensed veterinarian" in result["answer"]
 
 
@@ -138,7 +141,7 @@ def test_postprocess_answer_returns_low_confidence_when_grounding_is_insufficien
     )
 
     assert result["confidence"] == "low"
-    assert result["needs_vet_followup"] is True
+    assert result["needs_vet_followup"] is False
     assert LOW_CONTEXT_DISCLAIMER in result["disclaimers"]
 
 

@@ -61,6 +61,10 @@ DEFAULT_DISCLAIMER = (
 )
 
 LOW_CONTEXT_DISCLAIMER = (
+    "The retrieved context is limited, so the answer may be incomplete or lower confidence."
+)
+
+NO_CONTEXT_DISCLAIMER = (
     "There is not enough grounded context in the knowledge base to provide a reliable answer."
 )
 
@@ -93,28 +97,45 @@ def _contains_any(text: str, keywords: set[str]) -> list[str]:
     return sorted(set(matches))
 
 
-def _sanitize_sources(retrieved_chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    allowed_keys = {
-        "document_id",
-        "chunk_id",
-        "title",
-        "source",
-        "category",
-        "species",
-        "life_stage",
-        "similarity_score",
-        "snippet",
-        "metadata",
-    }
+def _build_snippet_from_chunk(chunk: dict[str, Any], max_length: int = 280) -> str | None:
+    snippet = chunk.get("snippet")
+    if snippet:
+        return snippet
 
-    sanitized_sources: list[dict[str, Any]] = []
+    raw_text = (chunk.get("content") or chunk.get("text") or "").strip()
+    if not raw_text:
+        return None
+
+    normalized = " ".join(raw_text.split())
+    if len(normalized) <= max_length:
+        return normalized
+    return normalized[: max_length - 3].rstrip() + "..."
+
+
+def _sanitize_sources(retrieved_chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    sanitized: list[dict[str, Any]] = []
 
     for chunk in retrieved_chunks:
-        sanitized_chunk = {key: value for key, value in chunk.items() if key in allowed_keys}
-        sanitized_chunk.setdefault("metadata", {})
-        sanitized_sources.append(sanitized_chunk)
+        metadata = chunk.get("metadata") or {}
+        if not isinstance(metadata, dict):
+            metadata = {}
 
-    return sanitized_sources
+        sanitized.append(
+            {
+                "document_id": chunk.get("document_id"),
+                "chunk_id": chunk.get("chunk_id"),
+                "title": chunk.get("title"),
+                "source": chunk.get("source"),
+                "category": chunk.get("category"),
+                "species": chunk.get("species"),
+                "life_stage": chunk.get("life_stage"),
+                "similarity_score": chunk.get("similarity_score"),
+                "snippet": _build_snippet_from_chunk(chunk),
+                "metadata": metadata,
+            }
+        )
+
+    return sanitized
 
 
 def assess_query_risk(question: str) -> GuardrailDecision:
@@ -125,7 +146,12 @@ def assess_query_risk(question: str) -> GuardrailDecision:
 
     is_sensitive = len(sensitive_matches) > 0
     is_medical = is_sensitive or len(medical_matches) > 0
-    needs_vet_followup = is_sensitive or "diagnosis" in normalized_question or "dose" in normalized_question
+    needs_vet_followup = (
+        is_sensitive
+        or "diagnosis" in normalized_question
+        or "dose" in normalized_question
+        or "dosage" in normalized_question
+    )
 
     reasons: list[str] = []
     disclaimers = [DEFAULT_DISCLAIMER]
@@ -156,10 +182,11 @@ def assess_retrieval_grounding(
 ) -> dict[str, Any]:
     if not retrieved_chunks:
         return {
+            "has_any_context": False,
             "has_sufficient_context": False,
             "matched_count": 0,
             "top_score": None,
-            "disclaimers": [DEFAULT_DISCLAIMER, LOW_CONTEXT_DISCLAIMER],
+            "disclaimers": [DEFAULT_DISCLAIMER, NO_CONTEXT_DISCLAIMER],
         }
 
     scores = [
@@ -170,6 +197,7 @@ def assess_retrieval_grounding(
 
     if not scores:
         return {
+            "has_any_context": True,
             "has_sufficient_context": False,
             "matched_count": 0,
             "top_score": None,
@@ -179,6 +207,7 @@ def assess_retrieval_grounding(
     matched_scores = [score for score in scores if score >= similarity_threshold]
     top_score = max(scores)
 
+    has_any_context = len(retrieved_chunks) > 0
     has_sufficient_context = len(matched_scores) > 0
 
     disclaimers = [DEFAULT_DISCLAIMER]
@@ -186,6 +215,7 @@ def assess_retrieval_grounding(
         disclaimers.append(LOW_CONTEXT_DISCLAIMER)
 
     return {
+        "has_any_context": has_any_context,
         "has_sufficient_context": has_sufficient_context,
         "matched_count": len(matched_scores),
         "top_score": top_score,
@@ -206,17 +236,25 @@ def build_safe_fallback_answer(
         "is in distress, or the situation may be urgent."
     )
 
-    sanitized_sources = _sanitize_sources(retrieved_chunks)
-
     return {
         "answer": answer,
         "needs_vet_followup": True if risk.is_medical else risk.needs_vet_followup,
         "confidence": "low",
-        "sources": sanitized_sources,
-        "retrieval_count": len(sanitized_sources),
+        "sources": _sanitize_sources(retrieved_chunks),
+        "retrieval_count": len(retrieved_chunks),
         "used_filters": {},
-        "disclaimers": sorted(set(risk.disclaimers + [LOW_CONTEXT_DISCLAIMER])),
+        "disclaimers": sorted(set(risk.disclaimers + [NO_CONTEXT_DISCLAIMER])),
     }
+
+
+def _score_to_confidence(top_score: float | None) -> str:
+    if top_score is None:
+        return "low"
+    if top_score >= 0.80:
+        return "high"
+    if top_score >= 0.60:
+        return "medium"
+    return "low"
 
 
 def postprocess_answer(
@@ -227,10 +265,11 @@ def postprocess_answer(
 ) -> dict[str, Any]:
     risk = assess_query_risk(question)
     grounding = assess_retrieval_grounding(retrieved_chunks, similarity_threshold)
-    sanitized_sources = _sanitize_sources(retrieved_chunks)
 
-    final_confidence = risk.confidence
-    if not grounding["has_sufficient_context"]:
+    grounding_confidence = _score_to_confidence(grounding["top_score"])
+    final_confidence = grounding_confidence
+
+    if risk.is_sensitive:
         final_confidence = "low"
     elif risk.is_medical and final_confidence == "high":
         final_confidence = "medium"
@@ -247,10 +286,10 @@ def postprocess_answer(
 
     return {
         "answer": final_answer,
-        "needs_vet_followup": risk.needs_vet_followup or not grounding["has_sufficient_context"],
+        "needs_vet_followup": risk.needs_vet_followup,
         "confidence": final_confidence,
-        "sources": sanitized_sources,
-        "retrieval_count": len(sanitized_sources),
+        "sources": _sanitize_sources(retrieved_chunks),
+        "retrieval_count": len(retrieved_chunks),
         "used_filters": {},
         "disclaimers": final_disclaimers,
     }

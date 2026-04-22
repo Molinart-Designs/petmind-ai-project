@@ -1,0 +1,13 @@
+{
+    "question": "My senior dog is weak, confused, and having trouble breathing. What should I do?",
+    "pet_profile": {
+      "species": "dog",
+      "life_stage": "senior"
+    },
+    "filters": {
+      "category": "hydration",
+      "species": "dog",
+      "life_stage": "senior"
+    },
+    "top_k": 4
+  }
