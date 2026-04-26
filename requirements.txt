@@ -5,6 +5,7 @@ pydantic-settings==2.14.0
 python-dotenv==1.2.2
 httpx==0.28.1
 python-multipart
+PyJWT[crypto]==2.10.1
 
 sqlalchemy==2.0.49
 alembic==1.18.4

@@ -29,6 +29,7 @@ htmlcov/
 .hypothesis/
 .tox/
 .nox/
+reports/htmlcov/
 
 # Lint / type check / tooling
 .mypy_cache/

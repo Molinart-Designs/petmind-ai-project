@@ -9,11 +9,12 @@ from src.api.schemas import (
     IngestResponse,
     QueryRequest,
     QueryResponse,
+    query_response_dict_from_orchestrator,
 )
 from src.core.config import settings
 from src.core.orchestrator import RAGOrchestrator, get_orchestrator
 from src.db.session import get_db_session
-from src.security.auth import require_api_key
+from src.security.auth import get_request_auth_for_ingest, get_request_auth_for_query
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -59,7 +60,7 @@ async def health_check() -> HealthResponse:
     response_model=QueryResponse,
     status_code=status.HTTP_200_OK,
     summary="Query PetMind AI with RAG context",
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(get_request_auth_for_query)],
 )
 async def query_petmind(
     payload: QueryRequest,
@@ -81,7 +82,12 @@ async def query_petmind(
 
         result = await orchestrator.answer(payload)
 
-        return QueryResponse(**result)
+        # Public API: never expose internal LLM review drafts over HTTP (field stays null for clients).
+        result = {**result, "review_draft": None}
+        public_payload = query_response_dict_from_orchestrator(result)
+        public_payload["review_draft"] = None
+
+        return QueryResponse.model_validate(public_payload)
 
     except ValueError as exc:
         logger.warning("Validation/business error in query flow", extra={"error": str(exc)})
@@ -103,7 +109,7 @@ async def query_petmind(
     response_model=IngestResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Ingest curated pet care knowledge into the vector store",
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(get_request_auth_for_ingest)],
 )
 async def ingest_documents(
     payload: IngestRequest,

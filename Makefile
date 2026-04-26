@@ -1,4 +1,4 @@
-.PHONY: help up down restart logs ps build shell test test-unit test-integration load db-shell format clean ingest health
+.PHONY: help up down restart logs ps build shell test test-unit test-integration coverage coverage-html load db-shell format clean ingest health
 
 help:
 	@echo "Available commands:"
@@ -13,6 +13,8 @@ help:
 	@echo "  make test             - Run all tests"
 	@echo "  make test-unit        - Run unit tests"
 	@echo "  make test-integration - Run integration tests"
+	@echo "  make coverage         - Run tests with XML coverage report"
+	@echo "  make coverage-html    - Run tests with HTML coverage report"
 	@echo "  make load             - Run load tests with Locust"
 	@echo "  make ingest           - Run sample ingestion script"
 	@echo "  make health           - Check local health endpoint"
@@ -51,6 +53,12 @@ test-unit:
 
 test-integration:
 	docker compose exec api pytest tests/integration -v
+
+coverage:
+	docker compose exec api sh -c "mkdir -p reports && pytest -v --cov=src --cov-report=term-missing --cov-report=xml:reports/coverage.xml --cov-fail-under=60"
+
+coverage-html:
+	docker compose exec api sh -c "mkdir -p reports && pytest -v --cov=src --cov-report=term-missing --cov-report=html:reports/htmlcov --cov-report=xml:reports/coverage.xml --cov-fail-under=60"
 
 load:
 	docker compose exec api locust -f tests/load/locustfile.py

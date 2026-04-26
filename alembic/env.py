@@ -4,7 +4,16 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from src.core.config import settings
-from src.db.models import DocumentChunk  # noqa: F401
+from src.db.models import (  # noqa: F401
+    DocumentChunk,
+    KnowledgeRefreshJobRow,
+    KnowledgeSource,
+    Pet,
+    QueryHistory,
+    ResearchCandidate,
+    ResearchCandidateSource,
+    User,
+)
 from src.db.session import Base
 
 config = context.config

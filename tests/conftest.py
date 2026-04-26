@@ -7,6 +7,12 @@ from fastapi.testclient import TestClient
 from src.api.main import app
 from src.core.config import settings
 from src.core.orchestrator import get_orchestrator
+from src.security.auth import (
+    RequestAuthContext,
+    get_request_auth_for_ingest,
+    get_request_auth_for_query,
+)
+from src.security.auth_jwt import PERMISSION_INGEST_WRITE, PERMISSION_QUERY_ASK
 
 
 class FakeOrchestrator:
@@ -43,7 +49,10 @@ class FakeOrchestrator:
             "disclaimers": [
                 "PetMind AI provides educational guidance based on curated information and does not replace professional veterinary evaluation."
             ],
+            "review_draft": None,
             "generated_at": datetime.now(timezone.utc),
+            "answer_source": "internal",
+            "knowledge_status": "approved",
         }
 
     async def ingest(self, payload):
@@ -64,9 +73,30 @@ def fake_orchestrator() -> FakeOrchestrator:
     return FakeOrchestrator()
 
 
+def _override_query_auth() -> RequestAuthContext:
+    return RequestAuthContext(
+        method="jwt",
+        permissions=frozenset({PERMISSION_QUERY_ASK}),
+        claims={"sub": "auth0|test-user"},
+        db_user=None,
+    )
+
+
+def _override_ingest_auth() -> RequestAuthContext:
+    return RequestAuthContext(
+        method="jwt",
+        permissions=frozenset({PERMISSION_INGEST_WRITE}),
+        claims={"sub": "auth0|test-user"},
+        db_user=None,
+    )
+
+
 @pytest.fixture
-def client(fake_orchestrator: FakeOrchestrator) -> Generator[TestClient, None, None]:
+def client(fake_orchestrator: FakeOrchestrator, request: pytest.FixtureRequest) -> Generator[TestClient, None, None]:
     app.dependency_overrides[get_orchestrator] = lambda: fake_orchestrator
+    if request.node.get_closest_marker("no_auth_override") is None:
+        app.dependency_overrides[get_request_auth_for_query] = _override_query_auth
+        app.dependency_overrides[get_request_auth_for_ingest] = _override_ingest_auth
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()

@@ -1,12 +1,11 @@
-def test_ingest_endpoint_returns_201_with_valid_api_key_and_payload(
-    client,
-    auth_headers,
-    sample_ingest_payload,
-):
+import pytest
+from fastapi import HTTPException
+
+
+def test_ingest_endpoint_returns_201_with_valid_payload(client, sample_ingest_payload):
     response = client.post(
         "/api/v1/ingest",
         json=sample_ingest_payload,
-        headers=auth_headers,
     )
 
     assert response.status_code == 201
@@ -22,10 +21,8 @@ def test_ingest_endpoint_returns_201_with_valid_api_key_and_payload(
     assert "ingested_at" in body
 
 
-def test_ingest_endpoint_returns_401_when_api_key_is_missing(
-    client,
-    sample_ingest_payload,
-):
+@pytest.mark.no_auth_override
+def test_ingest_endpoint_returns_401_when_bearer_token_is_missing(client, sample_ingest_payload):
     response = client.post(
         "/api/v1/ingest",
         json=sample_ingest_payload,
@@ -33,28 +30,50 @@ def test_ingest_endpoint_returns_401_when_api_key_is_missing(
 
     assert response.status_code == 401
     body = response.json()
-    assert "Missing API key" in body["detail"]
+    assert "Missing bearer access token" in body["detail"]
 
 
-def test_ingest_endpoint_returns_401_when_api_key_is_invalid(
-    client,
-    sample_ingest_payload,
+@pytest.mark.no_auth_override
+def test_ingest_endpoint_returns_401_when_access_token_is_invalid(
+    client, sample_ingest_payload, monkeypatch
 ):
+    def _invalid(_token: str):
+        raise HTTPException(status_code=401, detail="Invalid access token.")
+
+    monkeypatch.setattr("src.security.auth_jwt.validate_access_token", _invalid)
+
     response = client.post(
         "/api/v1/ingest",
         json=sample_ingest_payload,
-        headers={"X-API-Key": "invalid-key"},
+        headers={"Authorization": "Bearer invalid-token"},
     )
 
     assert response.status_code == 401
     body = response.json()
-    assert body["detail"] == "Invalid API key."
+    assert body["detail"] == "Invalid access token."
 
 
-def test_ingest_endpoint_returns_422_for_invalid_payload(
-    client,
-    auth_headers,
+@pytest.mark.no_auth_override
+def test_ingest_endpoint_returns_403_when_missing_ingest_permission(
+    client, sample_ingest_payload, monkeypatch
 ):
+    def _validate(_token: str):
+        return {"sub": "auth0|no-ingest", "permissions": ["query:ask"]}
+
+    monkeypatch.setattr("src.security.auth_jwt.validate_access_token", _validate)
+
+    response = client.post(
+        "/api/v1/ingest",
+        json=sample_ingest_payload,
+        headers={"Authorization": "Bearer any-token"},
+    )
+
+    assert response.status_code == 403
+    body = response.json()
+    assert "ingest:write" in body["detail"]
+
+
+def test_ingest_endpoint_returns_422_for_invalid_payload(client):
     payload = {
         "source": "demo_batch",
         "documents": [],
@@ -63,7 +82,6 @@ def test_ingest_endpoint_returns_422_for_invalid_payload(
     response = client.post(
         "/api/v1/ingest",
         json=payload,
-        headers=auth_headers,
     )
 
     assert response.status_code == 422

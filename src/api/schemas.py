@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, ConfigDict, field_validator
+from pydantic import BaseModel, Field, ConfigDict, field_serializer, field_validator
 
 
 class PetProfile(BaseModel):
@@ -72,6 +72,7 @@ class SourceItem(BaseModel):
     source: str | None = None
     category: str | None = None
     species: str | None = None
+    breed: str | None = None
     life_stage: str | None = None
     similarity_score: float | None = Field(default=None, ge=0, le=1)
     snippet: str | None = None
@@ -80,8 +81,41 @@ class SourceItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+QueryAnswerSource = Literal["internal", "external_trusted", "fallback"]
+QueryKnowledgeStatus = Literal["approved", "provisional", "none"]
+
+
+def query_response_dict_from_orchestrator(result: dict[str, Any]) -> dict[str, Any]:
+    """
+    Subconjunto seguro del dict devuelto por ``RAGOrchestrator.answer`` para construir ``QueryResponse``.
+
+    El orquestador puede incluir claves solo para logging u orquestación; ``QueryResponse`` usa
+    ``extra='forbid'``, así que aquí se descartan campos que no formen parte del contrato HTTP público
+    (por ejemplo ``used_external``).
+    """
+    public = frozenset(QueryResponse.model_fields.keys())
+    return {k: v for k, v in result.items() if k in public}
+
+
 class QueryResponse(BaseModel):
-    answer: str
+    """
+    Contrato público de ``POST /query``: solo los campos declarados aquí deben serializarse.
+
+    ``answer_source`` y ``knowledge_status`` indican procedencia del contexto; no incluir campos
+    internos (p. ej. flags de orquestación) en la respuesta HTTP.
+    """
+
+    answer: str = Field(
+        ...,
+        description="Concise user-facing answer; safe for direct display to pet owners.",
+    )
+    review_draft: str | None = Field(
+        default=None,
+        description=(
+            "Reserved for backward-compatible schema shape. The public ``/query`` HTTP API always "
+            "returns ``null`` here; internal review text is never exposed to API clients."
+        ),
+    )
     needs_vet_followup: bool = Field(
         ...,
         description="Whether the response recommends consulting a veterinarian",
@@ -92,6 +126,25 @@ class QueryResponse(BaseModel):
     used_filters: dict[str, Any] = Field(default_factory=dict)
     disclaimers: list[str] = Field(default_factory=list)
     generated_at: datetime
+    answer_source: QueryAnswerSource = Field(
+        default="internal",
+        description=(
+            "Where grounding for the answer came from: curated internal retrieval only, "
+            "trusted allowlisted external augmentation, or a safe fallback when context was insufficient."
+        ),
+    )
+    knowledge_status: QueryKnowledgeStatus = Field(
+        default="approved",
+        description=(
+            "Lifecycle of knowledge backing the reply: fully curated internal KB, includes provisional "
+            "external bundles, or none when no reliable context was available."
+        ),
+    )
+
+    @field_serializer("review_draft")
+    def _review_draft_never_serialized_to_clients(self, _value: str | None) -> None:
+        """Defensa en profundidad: el JSON de respuesta nunca incluye borrador interno (solo null)."""
+        return None
 
     model_config = ConfigDict(extra="forbid")
 

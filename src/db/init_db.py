@@ -1,6 +1,15 @@
 from sqlalchemy import text
 
-from src.db.models import DocumentChunk  # noqa: F401
+from src.db.models import (  # noqa: F401
+    DocumentChunk,
+    KnowledgeRefreshJobRow,
+    KnowledgeSource,
+    Pet,
+    QueryHistory,
+    ResearchCandidate,
+    ResearchCandidateSource,
+    User,
+)
 from src.db.session import Base, engine
 from src.utils.logger import get_logger
 

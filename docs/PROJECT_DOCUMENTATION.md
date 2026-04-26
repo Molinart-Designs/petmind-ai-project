@@ -2,7 +2,8 @@
 
 **Programa:** Certified AI-LLM Solution Architect  
 **Curso:** 5 — Proyecto Final de Arquitectura e Integración AI/LLM  
-**Documento:** Plantilla Oficial de Documentación del Proyecto (Entregable 1; Primera parte)
+**Documento:** Plantilla Oficial de Documentación del Proyecto (Entregable Final)
+**Repositorio:** https://github.com/Molinart-Designs/final-project-ai-llm
 
 ---
 
@@ -39,6 +40,7 @@
 - [11. Rúbrica de Evaluación](#11-rúbrica-de-evaluación)
 - [12. Referencias y Bibliografía](#12-referencias-y-bibliografía)
 - [Anexos](#anexos)
+- [Anexo A — Fallback externo de confianza](#anexo-a--fallback-externo-de-confianza)
 
 ---
 
@@ -584,16 +586,456 @@ En versiones futuras, sería recomendable añadir:
 - evaluación sistemática de sesgos del corpus y de calidad de respuesta por categoría;
 - trazabilidad ampliada con herramientas de observabilidad LLM.
 
+## Anexo A — Fallback externo de confianza
+
+La arquitectura técnica alineada con el repositorio (capas L1–L3, flujo de `/api/v1/query`, feature flags, modelo `research_candidates`, seguridad, política provisional vs aprobado, refresh/TTL y modos de fallo) vive en **`docs/trusted-external-fallback.md`**.
+
 ## 6. Implementación y Configuración de Infraestructura
+
+### 6.1 Implementación del backend
+
+El backend de **PetMind AI — Personalized Pet Care Advisor API** fue implementado en **Python 3.11** utilizando **FastAPI** como framework principal para exponer una API REST moderna, tipada y fácil de documentar. La estructura del proyecto sigue una organización modular bajo `src/`, separando responsabilidades en las siguientes capas:
+
+- `src/api/`: definición de endpoints, rutas y esquemas de entrada/salida.
+- `src/core/`: configuración central, cliente LLM y orquestación del flujo principal.
+- `src/rag/`: embeddings, retrieval, ingestion y acceso al vector store.
+- `src/security/`: autenticación y guardrails de seguridad.
+- `src/db/`: sesión de base de datos, modelos y bootstrap de inicialización.
+- `src/research/`: componentes adicionales para fallback controlado con recuperación externa confiable.
+- `src/utils/`: utilidades de logging y soporte transversal.
+
+La API implementa los tres endpoints principales definidos en el diseño:
+
+- `GET /api/v1/health`
+- `POST /api/v1/query`
+- `POST /api/v1/ingest`
+
+Estos endpoints fueron diseñados para alinearse con el enfoque académico del proyecto, donde el entregable principal es un backend AI/LLM con arquitectura RAG y no una aplicación móvil completa.
+
+---
+
+### 6.2 Implementación del pipeline RAG
+
+El pipeline RAG fue implementado con una arquitectura de recuperación y generación dividida en etapas claras:
+
+1. **Recepción de la pregunta**
+   - El usuario envía una pregunta en lenguaje natural.
+   - Opcionalmente, puede incluir contexto estructurado de la mascota (`pet_profile`) y filtros (`category`, `species`, `life_stage`).
+
+2. **Validación y autenticación**
+   - FastAPI valida el payload mediante esquemas Pydantic.
+   - Se requiere autenticación mediante `X-API-Key` para endpoints protegidos.
+
+3. **Evaluación inicial de riesgo**
+   - Se aplican guardrails para detectar preguntas sensibles o médicas.
+   - Se determina si la respuesta debe ser más conservadora o si debe sugerirse atención veterinaria.
+
+4. **Retrieval semántico**
+   - La pregunta se transforma en embedding mediante OpenAI.
+   - Ese embedding se compara contra los embeddings almacenados en PostgreSQL + pgvector.
+   - Se recuperan los fragmentos más relevantes según similitud y filtros.
+
+5. **Construcción del prompt**
+   - Se genera un `system prompt` con reglas de seguridad.
+   - Se construye un `user prompt` con la pregunta, perfil de la mascota y contexto recuperado.
+
+6. **Generación de respuesta**
+   - El modelo LLM genera una respuesta grounded usando únicamente el contexto recuperado.
+
+7. **Postprocesamiento y seguridad**
+   - Se ajusta la confianza (`high`, `medium`, `low`) según el score del retrieval.
+   - Se agregan disclaimers.
+   - Se establece `needs_vet_followup` cuando aplica.
+   - Se devuelven también las `sources` utilizadas en la respuesta.
+
+Este diseño permite minimizar alucinaciones y mantener trazabilidad entre evidencia recuperada y respuesta generada.
+
+---
+
+### 6.3 Base de datos y vector store
+
+El sistema utiliza **PostgreSQL** como base de datos principal y **pgvector** como extensión para almacenamiento y búsqueda vectorial.
+
+La tabla principal para el RAG es `document_chunks`, donde cada registro contiene:
+
+- identificadores de documento y chunk
+- texto del fragmento
+- metadatos relevantes
+- categoría
+- especie
+- etapa de vida
+- embedding vectorial
+- timestamps de creación
+
+La persistencia se gestiona con **SQLAlchemy** y las migraciones con **Alembic**. Esto permite:
+
+- trazabilidad de cambios de esquema
+- inicialización reproducible
+- despliegue consistente entre local y cloud
+
+---
+
+### 6.4 Ingesta de conocimiento
+
+El endpoint `POST /api/v1/ingest` permite cargar conocimiento curado al sistema. El flujo de ingesta consiste en:
+
+1. recibir uno o más documentos estructurados
+2. normalizar y dividir el texto en chunks
+3. generar embeddings por chunk
+4. persistir contenido, metadatos y embeddings en PostgreSQL + pgvector
+
+La estrategia de chunking usada en esta versión es por longitud controlada, con parámetros configurables:
+
+- `CHUNK_SIZE`
+- `CHUNK_OVERLAP`
+
+Esto permite mantener consistencia entre recuperación semántica y tamaño utilizable del contexto.
+
+---
+
+### 6.5 Seguridad implementada
+
+La seguridad del sistema en esta versión incluye:
+
+- autenticación básica mediante `X-API-Key`
+- separación entre endpoints públicos y protegidos
+- guardrails para consultas sensibles o médicas
+- restricción explícita contra diagnósticos veterinarios concluyentes
+- fallback seguro cuando no existe suficiente grounding
+- logging estructurado para monitoreo y depuración
+
+Adicionalmente, el sistema fue diseñado para distinguir entre:
+
+- respuestas con suficiente evidencia
+- respuestas con contexto limitado
+- respuestas que requieren derivación a veterinario
+
+Como mejora futura, los secretos actualmente usados en despliegue serán migrados a un manejador de secretos administrado (por ejemplo, AWS Secrets Manager o Parameter Store).
+
+---
+
+### 6.6 Contenerización y entorno local
+
+El proyecto fue contenedorizado con **Docker** y **Docker Compose** para facilitar reproducibilidad y despliegue.
+
+#### Dockerfile
+
+Se utiliza un `Dockerfile` multi-stage para:
+
+- instalar dependencias en una etapa de build
+- copiar únicamente el entorno necesario a la imagen final
+- reducir tamaño y complejidad de la imagen runtime
+- mantener una imagen más limpia para producción
+
+La imagen final expone el puerto `8000` y define un `HEALTHCHECK` contra `/api/v1/health`.
+
+#### Docker Compose
+
+El archivo `docker-compose.yml` define:
+
+- un servicio `postgres` basado en `pgvector/pgvector`
+- un servicio `api` para FastAPI
+- volúmenes persistentes
+- variables de entorno desde `.env`
+- health checks tanto para la base de datos como para la API
+- dependencias entre servicios para arranque ordenado
+
+Esto permite levantar localmente un entorno funcional y reproducible con una sola instrucción.
+
+---
+
+### 6.7 Despliegue en la nube
+
+Para el despliegue cloud se utilizó **AWS**, siguiendo una arquitectura mínima pero defendible para el curso.
+
+#### Servicios utilizados
+
+- **Amazon RDS for PostgreSQL**
+- **Amazon ECR**
+- **Amazon ECS con Fargate**
+- **Amazon CloudWatch Logs**
+- **IAM**
+
+#### Flujo de despliegue
+
+1. La imagen Docker se construye localmente.
+2. La imagen se etiqueta y se sube a **Amazon ECR**.
+3. Se registra una **Task Definition** en ECS.
+4. Se crea un **Service** en **ECS Fargate**.
+5. El contenedor corre en AWS y expone la API públicamente.
+6. La aplicación se conecta a una instancia **RDS PostgreSQL**.
+7. Los logs de ejecución se envían a **CloudWatch Logs**.
+
+El endpoint público `/api/v1/health` fue validado en el entorno desplegado y respondió correctamente con estado `healthy`.
+
+---
+
+### 6.8 Configuración de entornos
+
+La configuración del sistema se centraliza en `src/core/config.py`, con soporte para variables de entorno cargadas desde `.env` en local o desde variables del entorno en cloud.
+
+Entre las variables principales se encuentran:
+
+- configuración de API
+- proveedor LLM
+- modelo de embeddings
+- conexión a PostgreSQL
+- parámetros de chunking
+- umbral de similitud
+- nivel de logging
+- flags de fallback externo confiable
+
+Esto permite separar claramente la configuración entre:
+
+- desarrollo local
+- pruebas
+- staging
+- producción
+
+---
+
+### 6.9 CI/CD y automatización
+
+El proyecto incluye workflows de GitHub Actions para integración continua. Actualmente el pipeline ejecuta:
+
+- instalación de dependencias
+- verificación estructural del proyecto
+- ejecución de pruebas
+- generación de cobertura
+
+Como parte de la evolución del proyecto, se contempla fortalecer el pipeline de CD para automatizar completamente la construcción de imagen, publicación en ECR y despliegue hacia ECS.
+
+---
+
+### 6.10 Estado actual de infraestructura
+
+Al cierre de esta implementación, el sistema cuenta con:
+
+- backend funcional bajo `src/`
+- base de datos PostgreSQL con pgvector
+- migraciones administradas con Alembic
+- entorno local reproducible con Docker Compose
+- despliegue funcional en AWS
+- endpoint de salud validado en producción
+- pipeline RAG operativo de extremo a extremo
+- base para fallback externo confiable con feature flags
+
+La infraestructura actual es suficiente para demostrar el funcionamiento técnico del MVP del curso y sirve también como base para una evolución posterior hacia una arquitectura más robusta.
+
+---
 
 ## 7. Estrategia de Pruebas y Resultados
 
-## 8. Despliegue, Escalabilidad y Costos
+### 7.1 Enfoque general de pruebas
 
-## 9. Observabilidad y Monitoreo
+La estrategia de pruebas del proyecto fue diseñada para validar tanto la lógica interna del sistema como el comportamiento observable desde la API.
 
-## 10. Resultados, Conclusiones y Trabajo Futuro
+Se adoptó una combinación de:
 
-## 11. Rúbrica de Evaluación
+- **pruebas unitarias**
+- **pruebas de integración**
+- **prueba de integración RAG end-to-end**
+- **validaciones manuales en entorno desplegado**
 
-## 12. Referencias y Bibliografía
+El objetivo fue asegurar que el sistema no solo compila y responde, sino que también mantiene el comportamiento esperado en autenticación, guardrails, retrieval, orquestación, persistence y despliegue.
+
+---
+
+### 7.2 Pruebas unitarias
+
+Las pruebas unitarias se enfocan en componentes aislados del backend. Entre las áreas cubiertas se encuentran:
+
+- autenticación por API key
+- endpoint de salud
+- guardrails y clasificación de riesgo
+- lógica del orquestador
+- retriever
+- política de promoción de conocimiento provisional
+
+Estas pruebas validan el comportamiento interno de la aplicación sin necesidad de depender de servicios externos reales.
+
+---
+
+### 7.3 Pruebas de integración
+
+Las pruebas de integración verifican el comportamiento conjunto de varias capas del sistema, incluyendo:
+
+- endpoints de `query`
+- endpoint de `ingest`
+- validación de payloads
+- respuestas HTTP esperadas
+- integración entre rutas, esquemas y dependencias
+
+También se añadieron pruebas de integración para la arquitectura de trusted external fallback usando mocks, con el fin de validar la lógica del flujo sin depender de internet.
+
+---
+
+### 7.4 Prueba de integración RAG end-to-end
+
+Como parte de E3 se implementó una prueba de integración explícita del pipeline RAG de extremo a extremo.
+
+Esta prueba:
+
+- usa el endpoint real `/api/v1/query`
+- utiliza autenticación real
+- usa el orquestador real
+- utiliza el retriever real
+- consulta la base de datos real de prueba
+- recupera chunks reales desde `document_chunks`
+- solo controla embeddings y generación final del LLM para mantener determinismo
+
+Con ello se validó el flujo:
+
+**consulta → embedding → retrieval → contexto → generación → respuesta HTTP**
+
+Esta prueba es importante porque demuestra el comportamiento real del pipeline RAG más allá de pruebas HTTP basadas solo en mocks de alto nivel.
+
+---
+
+### 7.5 Cobertura de pruebas
+
+El proyecto integra **pytest-cov** para medición de cobertura.
+
+Se generó el archivo:
+
+- `reports/coverage.xml`
+
+La cobertura total obtenida fue:
+
+- **82.91%**
+
+Este valor supera ampliamente el umbral mínimo requerido por el entregable (**60%**) y proporciona una buena señal de robustez en la base del proyecto.
+
+La cobertura se integra también al pipeline de CI para validar automáticamente la salud de la suite.
+
+---
+
+### 7.6 Validación funcional del pipeline RAG
+
+Además de las pruebas automatizadas, se realizaron validaciones funcionales manuales del flujo RAG completo.
+
+#### Casos verificados
+
+- ingesta de documentos curados
+- almacenamiento de chunks en PostgreSQL + pgvector
+- recuperación por similitud semántica
+- respuestas con fuentes trazables
+- respuestas con `confidence`
+- respuestas con `needs_vet_followup`
+- fallback cuando no existe suficiente grounding
+- comportamiento conservador ante preguntas sensibles
+
+#### Resultado
+
+El sistema demostró ser capaz de:
+
+- responder adecuadamente cuando existe conocimiento relevante
+- no sobreafirmar cuando el contexto es insuficiente
+- recomendar atención veterinaria en escenarios sensibles
+- devolver trazabilidad mediante `sources`
+
+---
+
+### 7.7 Evaluación del comportamiento de seguridad
+
+Los guardrails fueron probados tanto mediante tests como mediante validaciones manuales.
+
+Se verificó que el sistema:
+
+- no emite diagnósticos veterinarios concluyentes
+- reduce confianza en preguntas sensibles
+- activa `needs_vet_followup` en escenarios de riesgo
+- usa fallback seguro cuando no hay contexto suficiente
+- conserva trazabilidad entre evidencia recuperada y respuesta generada
+
+Esto fue especialmente importante para mantener el carácter responsable del sistema y reducir riesgo de alucinación.
+
+---
+
+### 7.8 Evaluación LLM
+
+La evaluación formal con métricas específicas de RAG/LLM se preparó como parte del entregable mediante notebook y reportes.
+
+El objetivo de esta evaluación es medir al menos:
+
+- groundedness / faithfulness
+- answer relevance
+- context relevance
+
+El resultado esperado del proceso de evaluación será persistido en:
+
+- `reports/ragas_report.json`
+
+Esta evaluación complementa las pruebas tradicionales, ya que no solo verifica si el sistema responde, sino si lo hace de forma alineada con el contexto recuperado.
+
+---
+
+### 7.9 Prueba de carga
+
+Como parte de la estrategia de validación no funcional, se contempla una prueba de carga con **Locust** utilizando al menos **10 usuarios concurrentes**.
+
+El objetivo de esta prueba es observar:
+
+- estabilidad del endpoint bajo concurrencia
+- tiempos de respuesta básicos
+- comportamiento general de la API en un escenario controlado
+
+El escenario de carga está orientado principalmente a:
+
+- `/api/v1/health`
+- `/api/v1/query`
+
+El reporte asociado se integrará como evidencia del entregable en la carpeta de reportes correspondiente.
+
+---
+
+### 7.10 CI y reproducibilidad
+
+El proyecto incorpora integración continua mediante GitHub Actions, lo cual permite ejecutar de forma repetible:
+
+- instalación de dependencias
+- validaciones estructurales
+- suite de pruebas
+- generación de cobertura
+
+Esto mejora la reproducibilidad del proyecto y reduce la probabilidad de regresiones silenciosas.
+
+A nivel local, la reproducibilidad también se apoya en:
+
+- `Dockerfile`
+- `docker-compose.yml`
+- `Makefile`
+- migraciones Alembic
+- configuración centralizada por variables de entorno
+
+---
+
+### 7.11 Resultados generales
+
+A nivel técnico, el sistema alcanzó los siguientes resultados:
+
+- backend funcional y desplegado
+- endpoints operativos localmente y en la nube
+- pipeline RAG demostrable
+- ingesta y retrieval funcionando con pgvector
+- pruebas automatizadas amplias
+- cobertura superior al mínimo requerido
+- integración real entre API, orquestación y base vectorial
+- base sólida para evaluación LLM y pruebas de carga
+
+En conjunto, estos resultados muestran que el proyecto pasó de una arquitectura teórica a una implementación funcional, reproducible y desplegada.
+
+---
+
+### 7.12 Limitaciones actuales y siguientes pasos
+
+Aunque el sistema ya es funcional, todavía existen áreas de mejora:
+
+- endurecimiento del manejo de secretos en AWS
+- ampliación del corpus curado
+- ejecución formal y persistente de RAGAS
+- implementación completa del reporte de carga
+- fortalecimiento del pipeline de CD
+- revisión adicional de fallback externo confiable antes de activarlo en producción
+
+Estas limitaciones no impiden la demostración del MVP, pero sí representan las líneas naturales de evolución del sistema para una versión posterior más robusta.
