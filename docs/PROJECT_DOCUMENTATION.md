@@ -4,6 +4,7 @@
 **Curso:** 5 — Proyecto Final de Arquitectura e Integración AI/LLM  
 **Documento:** Plantilla Oficial de Documentación del Proyecto (Entregable Final)
 **Repositorio:** https://github.com/Molinart-Designs/final-project-ai-llm
+**Frontend:** https://www.petronum.ai/
 
 ---
 
@@ -20,6 +21,7 @@
 | **Versión del Documento**       | v0.1                                                                                                      |
 | **Estado del Proyecto**         | En Planificación                                                                                          |
 | **Repositorio GitHub/GitLab**   | https://github.com/Molinart-Designs/final-project-ai-llm                                                  |
+| **Parte visual Frontal**        | https://www.petronum.ai/                                                                                  |
 | **Entorno Cloud**               | AWS                                                                                                       |
 | **Stack Tecnológico Principal** | Python 3.11, FastAPI, OpenAI, LangChain/LlamaIndex, PostgreSQL, pgvector/ChromaDB, Docker, GitHub Actions |
 

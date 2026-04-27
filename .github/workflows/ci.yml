@@ -10,6 +10,25 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    env:
+      # Debe coincidir con el servicio postgres y con src.core.config (tests e2e RAG).
+      DATABASE_URL: postgresql+psycopg://petmind:petmind_dev@localhost:5432/petmind
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: petmind
+          POSTGRES_PASSWORD: petmind_dev
+          POSTGRES_DB: petmind
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U petmind -d petmind"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -26,6 +45,9 @@ jobs:
 
       - name: Create reports directory
         run: mkdir -p reports
+
+      - name: Apply database migrations
+        run: alembic upgrade head
 
       - name: Verify E2 structure
         run: python scripts/check_e2.py

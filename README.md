@@ -7,14 +7,13 @@
 ## Production URL
 
 **Base URL:** `https://api.petronum.ai`
+**Front/Visual URL:** `https://www.petronum.ai/`
 
 ### Public endpoints
 
 - `GET /api/v1/health`
 - `POST /api/v1/query`
 - `POST /api/v1/ingest`
-
-> Replace the base URL above with the current public ECS/Fargate endpoint or public IP used for the E3 submission.
 
 ---
 
@@ -191,15 +190,13 @@ make clean
 ## Health
 
 ```
-curl http://<TU_PUBLIC_IP_O_URL>:8000/api/v1/health
+curl http://api.petronum.ai/api/v1/health
 ```
 
 ## Query
 
-I'm not showing secrets and sensitive information
-
 ```
-curl -X POST http://<PUBLIC_IP>:8000/api/v1/query \
+curl -X POST http://api.petronum.ai/api/v1/query \
   -H "Content-Type: application/json" \
   -H "X-API-Key: <API_KEY>" \
   -d '{
@@ -222,7 +219,7 @@ curl -X POST http://<PUBLIC_IP>:8000/api/v1/query \
 I'm not showing secrets and sensitive information
 
 ```
-curl -X POST http://PUBLIC_IP:8000/api/v1/ingest \
+curl -X POST http://api.petronum.ai/api/v1/ingest \
   -H "Content-Type: application/json" \
   -H "X-API-Key: API_KEY" \
   -d @data/curated/sample_ingest.json
