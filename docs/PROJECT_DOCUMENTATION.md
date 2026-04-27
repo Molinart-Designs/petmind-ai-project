@@ -2,8 +2,8 @@
 
 **Programa:** Certified AI-LLM Solution Architect  
 **Curso:** 5 — Proyecto Final de Arquitectura e Integración AI/LLM  
-**Documento:** Plantilla Oficial de Documentación del Proyecto (Entregable Final)
-**Repositorio:** https://github.com/Molinart-Designs/final-project-ai-llm
+**Documento:** Plantilla Oficial de Documentación del Proyecto (Entregable Final)  
+**Repositorio:** https://github.com/Molinart-Designs/final-project-ai-llm  
 **Frontend:** https://www.petronum.ai/
 
 ---

@@ -30,7 +30,11 @@ def test_ingest_endpoint_returns_401_when_bearer_token_is_missing(client, sample
 
     assert response.status_code == 401
     body = response.json()
-    assert "Missing bearer access token" in body["detail"]
+    # Strict JWT-only vs legacy API-key fallback (Docker often enables the latter).
+    assert body["detail"] in (
+        "Missing bearer access token.",
+        "Missing credentials: Bearer token or legacy API key.",
+    )
 
 
 @pytest.mark.no_auth_override
